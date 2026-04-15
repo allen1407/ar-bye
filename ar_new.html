@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>Shankh AR</title>
+<link rel="icon" href="data:,">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+  import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+  window._GLTFLoader   = GLTFLoader;
+  window._DRACOLoader  = DRACOLoader;
+  window._loadersReady = true;
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+a-scene { position: fixed !important; top: 0; left: 0; width: 100% !important; height: 100% !important; }
+.mindar-ui-overlay, .mindar-ui-loading, .mindar-ui-scanning { display: none !important; }
+
+#splash {
+  position: fixed; inset: 0; z-index: 100;
+  background: #000;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px;
+}
+#splash img.logo   { width: 70px; height: 70px; border-radius: 16px; }
+#splash h1         { color: #fff; font-family: sans-serif; font-size: 26px; font-weight: 700; }
+#splash p          { color: rgba(255,255,255,0.5); font-family: sans-serif; font-size: 13px; text-align: center; padding: 0 32px; }
+#splash img.marker { width: 160px; height: 160px; border-radius: 12px; border: 3px solid #00d4b4; }
+#start-btn {
+  padding: 14px 40px; border: none; border-radius: 40px; cursor: pointer;
+  background: #00d4b4; color: #000; font-size: 16px; font-weight: 700; font-family: sans-serif;
+}
+#hint {
+  position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.6); color: rgba(255,255,255,0.8);
+  padding: 10px 20px; border-radius: 40px;
+  font-family: sans-serif; font-size: 13px;
+  display: none; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<a-scene
+  id="ar-scene"
+  mindar-image="imageTargetSrc: targets.mind;
+                autoStart: false;
+                uiLoading: no; uiError: no; uiScanning: no;
+                maxTrack: 1;"
+  color-space="sRGB"
+  renderer="colorManagement: true; physicallyCorrectLights: true;"
+  vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false">
+  <a-assets timeout="0"></a-assets>
+  <a-camera active="false" position="0 0 0"></a-camera>
+  <a-entity mindar-image-target="targetIndex: 0">
+    <a-entity id="avatar-anchor"></a-entity>
+  </a-entity>
+</a-scene>
+
+<div id="splash">
+  <img class="logo" src="logo.png" alt="Shankh" onerror="this.style.display='none'">
+  <h1>Shankh AR</h1>
+  <p>Point your camera at this marker</p>
+  <img class="marker" src="marker.jpg" alt="marker">
+  <button id="start-btn" onclick="startAR()">Start AR</button>
+</div>
+
+<div id="hint">Point camera at the marker</div>
+
+<script>
+function startAR() {
+  document.getElementById('splash').style.display = 'none';
+  document.getElementById('hint').style.display = 'block';
+  const scene = document.getElementById('ar-scene');
+  const go = () => { const s = scene.systems['mindar-image-system']; if (s) s.start(); };
+  scene.hasLoaded ? go() : scene.addEventListener('loaded', go, { once: true });
+}
+
+window.addEventListener('load', function () {
+  const THREE    = AFRAME.THREE;
+  const anchor   = document.getElementById('avatar-anchor');
+  const targetEl = document.querySelector('[mindar-image-target]');
+  let mixer = null, waveAction = null;
+
+  function loadAvatar() {
+    if (!window._loadersReady) { setTimeout(loadAvatar, 100); return; }
+    const draco = new window._DRACOLoader();
+    draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    draco.preload();
+    const loader = new window._GLTFLoader();
+    loader.setDRACOLoader(draco);
+
+    // ── UPDATE THIS URL after uploading ar.glb to GitHub Releases ──────────
+    const GLB_URL = 'https://github.com/allen1407/new/releases/download/v1.0/ar.glb';
+    // ────────────────────────────────────────────────────────────────────────
+
+    loader.load(GLB_URL, function (gltf) {
+      const model = gltf.scene;
+      model.rotation.set(Math.PI / 2, 0, 0);
+      model.scale.set(2, 2, 2);
+      model.position.set(0, 0, 0.05);
+      anchor.object3D.add(model);
+      if (gltf.animations && gltf.animations.length) {
+        mixer = new THREE.AnimationMixer(model);
+        const clip = gltf.animations.find(a => a.name.toLowerCase() === 'wave') || gltf.animations[0];
+        if (clip) { waveAction = mixer.clipAction(clip); waveAction.setLoop(THREE.LoopRepeat, Infinity); }
+      }
+      const clock = new THREE.Clock();
+      (function tick() { requestAnimationFrame(tick); if (mixer) mixer.update(clock.getDelta()); })();
+    });
+  }
+
+  targetEl.addEventListener('targetFound', function () {
+    document.getElementById('hint').style.display = 'none';
+    anchor.object3D.visible = true;
+    if (waveAction) { waveAction.reset(); waveAction.play(); }
+  });
+
+  targetEl.addEventListener('targetLost', function () {
+    document.getElementById('hint').style.display = 'block';
+    if (waveAction) waveAction.stop();
+  });
+
+  loadAvatar();
+});
+</script>
+</body>
+</html>
